@@ -1,0 +1,50 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${PGUSER}
+      POSTGRES_PASSWORD: ${PGPASSWORD}
+      POSTGRES_DB: picking
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD","pg_isready","-U","${PGUSER}","-d","picking"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  picking-api:
+    build: ../services/picking-api
+    env_file: ../.env
+    depends_on: [db]
+    ports: ["8000:8000"]
+    volumes:
+      - ../services/picking-api:/app
+      - ../project/output:/data/abcxyz:ro
+
+  ui:
+    build: ../services/ui
+    env_file: ../.env
+    depends_on: [picking-api]
+    ports: ["8080:8080"]
+    volumes:
+      - ../services/ui:/app
+
+  n8n:
+    build:
+      context: ..
+      dockerfile: Dockerfile.n8n
+    container_name: n8n-python
+    environment:
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+      - MPLBACKEND=Agg
+    volumes:
+      - ../data:/data
+      - ../project:/data/project
+    ports: ["5678:5678"]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
