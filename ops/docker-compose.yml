@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: picking
+      POSTGRES_PASSWORD: picking
+      POSTGRES_DB: picking
+    ports:
+      - "5432:5432"
+    volumes:
+      - ../db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
