@@ -9,7 +9,8 @@ dependencies = [
   "jinja2",
   "httpx",
   "python-dotenv",
-  "itsdangerous"
+  "itsdangerous",
+  "python-multipart"
 ]
 
 [build-system]

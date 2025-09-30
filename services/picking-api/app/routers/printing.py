@@ -22,10 +22,20 @@ async def enqueue_product_label(
     user=Depends(get_current_user),
 ) -> schemas.PrintJobResponse:
     require_role(user, "operator")
+    if payload.item_name is None:
+        result = await session.execute(select(models.Product).where(models.Product.item_code == payload.item_code))
+        product = result.scalar_one_or_none()
+        if product is None:
+            raise HTTPException(status_code=404, detail="Producto no encontrado")
+        item_name = product.item_name
+    else:
+        item_name = payload.item_name
+
+    fecha = payload.fecha_ingreso or dt.date.today()
     zpl_payload = zpl.render_product_label(
         item_code=payload.item_code,
-        item_name=payload.item_name,
-        fecha_ingreso=payload.fecha_ingreso.strftime("%d-%m-%Y"),
+        item_name=item_name,
+        fecha_ingreso=fecha.strftime("%d-%m-%Y"),
     )
     job = models.PrintJob(
         printer_name=DEFAULT_PRINTER,

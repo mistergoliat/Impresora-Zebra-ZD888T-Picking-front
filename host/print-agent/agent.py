@@ -6,6 +6,8 @@ para obtener trabajos de impresión y enviarlos al spooler de Windows.
 
 import json
 import logging
+import os
+import tempfile
 import time
 from pathlib import Path
 
@@ -30,6 +32,12 @@ def load_config() -> dict:
 
 def send_raw_to_printer(printer_name: str, raw_data: str) -> None:
     if win32print is None:
+        if os.name == "nt":  # pragma: no cover - interacción con UI
+            temp_path = Path(tempfile.gettempdir()) / f"zpl_job_{int(time.time())}.zpl"
+            temp_path.write_text(raw_data, encoding="utf-8")
+            LOGGER.warning("win32print no disponible; abriendo archivo %s para impresión manual", temp_path)
+            os.startfile(str(temp_path))  # type: ignore[attr-defined]
+            return
         raise RuntimeError("win32print no disponible en este entorno")
     handle = win32print.OpenPrinter(printer_name)
     try:

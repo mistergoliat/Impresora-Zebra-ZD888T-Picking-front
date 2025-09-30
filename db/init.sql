@@ -33,14 +33,15 @@ CREATE TABLE IF NOT EXISTS stock(
   serial TEXT NULL,
   expiry DATE NULL,
   location TEXT NOT NULL DEFAULT 'MAIN',
+  qty INT NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS moves(
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  type TEXT NOT NULL CHECK (type IN ('in','out','transfer')),
-  doc_type TEXT NOT NULL CHECK (doc_type IN ('PO','SO','TR')),
+  type TEXT NOT NULL CHECK (type IN ('inbound','outbound','transfer','return')),
+  doc_type TEXT NOT NULL CHECK (doc_type IN ('PO','SO','TR','RT')),
   doc_number TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('draft','approved','pending','cancelled')) DEFAULT 'draft',
+  status TEXT NOT NULL CHECK (status IN ('draft','approved','pending','cancelled')) DEFAULT 'pending',
   created_by UUID NOT NULL REFERENCES users(id),
   approved_by UUID NULL REFERENCES users(id),
   created_at TIMESTAMP NOT NULL DEFAULT now(),
