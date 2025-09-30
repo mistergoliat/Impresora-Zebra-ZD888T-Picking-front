@@ -33,7 +33,6 @@ CREATE TABLE IF NOT EXISTS stock(
   serial TEXT NULL,
   expiry DATE NULL,
   location TEXT NOT NULL DEFAULT 'MAIN',
-  qty INT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS moves(
