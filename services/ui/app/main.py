@@ -129,12 +129,9 @@ async def login_submit(request: Request, username: str = Form(...), password: st
             "POST",
             "/auth/login",
             token=None,
-resp = client.post(
-    "http://localhost:8000/auth/login",
-    headers={"Content-Type": "application/json"},
-    json={"username": username, "password": password},
-    timeout=10,
-)
+codex/update-login-identifier-to-username-ysgovl
+            json={"username": username, "password": password},
+        )
     except httpx.RequestError:
         context = {
             "request": request,

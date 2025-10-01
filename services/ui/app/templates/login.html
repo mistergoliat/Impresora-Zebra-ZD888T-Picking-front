@@ -26,7 +26,7 @@
       </article>
     </div>
   </div>
-  <form class="login-card" method="post" action="{{ url_for('login_submit') }}">
+  <form class="login-card" id="login-form">
     <h2>Iniciar sesión</h2>
     <p>Ingresa tus credenciales corporativas para continuar.</p>
 
@@ -73,4 +73,52 @@
     </div>
   </form>
 </section>
+<script>
+  (function () {
+    const form = document.getElementById("login-form");
+    if (!form) {
+      return;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const data = {
+        username: form.username.value.trim(),
+        password: form.password.value,
+      };
+
+      if (!data.username || !data.password) {
+        alert("Completa usuario y contraseña para continuar.");
+        return;
+      }
+
+      try {
+        const response = await fetch("http://picking-api:8000/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+
+        if (!response.ok) {
+          alert("Credenciales inválidas");
+          return;
+        }
+
+        const token = await response.json();
+        if (!token || !token.access_token) {
+          alert("Respuesta inválida del servidor");
+          return;
+        }
+
+        localStorage.setItem("jwt", token.access_token);
+        document.cookie = `auth_token=${encodeURIComponent(token.access_token)}; path=/; SameSite=Lax`;
+        document.cookie = `username=${encodeURIComponent(data.username)}; path=/; SameSite=Lax`;
+        window.location.href = "/dashboard";
+      } catch (error) {
+        console.error("Login failed", error);
+        alert("No se pudo contactar la API de picking");
+      }
+    });
+  })();
+</script>
 {% endblock %}

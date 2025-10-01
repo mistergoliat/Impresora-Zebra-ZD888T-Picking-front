@@ -1,10 +1,11 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 CREATE TABLE IF NOT EXISTS users(
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   username TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('operator','supervisor','admin')),
+  role TEXT NOT NULL DEFAULT 'operator' CHECK (role IN ('operator','supervisor','admin')),
   active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMP NOT NULL DEFAULT now()
 );
@@ -84,5 +85,5 @@ CREATE TABLE IF NOT EXISTS print_jobs(
 );
 
 INSERT INTO users(username, password_hash, role)
-VALUES ('admin', '$2b$12$Zt7H8f5w2m6bTgVh7b2Ciu3kQ8Qm7l9M0qU7mV3L1o2X3yZxw8k7e', 'admin')
-ON CONFLICT DO NOTHING;
+VALUES ('admin', crypt('Admin#1234', gen_salt('bf')), 'admin')
+ON CONFLICT (username) DO NOTHING;
