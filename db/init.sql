@@ -84,5 +84,5 @@ CREATE TABLE IF NOT EXISTS print_jobs(
 );
 
 INSERT INTO users(username, password_hash, role)
-VALUES ('admin', '$2b$12$Zt7H8f5w2m6bTgVh7b2Ciu3kQ8Qm7l9M0qU7mV3L1o2X3yZxw8k7e', 'admin')
+VALUES ('admin', '$2b$12$1nqmxCFIvossKXkg0vvicuKEGDYZUtm1gea3xMN2rf4hZ8alJFvum', 'admin')
 ON CONFLICT DO NOTHING;
