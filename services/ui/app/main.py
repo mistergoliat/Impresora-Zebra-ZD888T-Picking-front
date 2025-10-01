@@ -129,6 +129,7 @@ async def login_submit(request: Request, username: str = Form(...), password: st
             "POST",
             "/auth/login",
             token=None,
+codex/update-login-identifier-to-username-ysgovl
             json={"username": username, "password": password},
         )
     except httpx.RequestError:
