@@ -2,12 +2,12 @@
 {% block title %}Operaciones - Imein Picking{% endblock %}
 
 {% block header_actions %}
-  {% if user_email %}
+  {% if username %}
   <div class="user-pill" role="presentation">
     <span class="user-pill__icon" aria-hidden="true">👋</span>
     <div class="user-pill__meta">
       <span class="user-pill__label">Conectado</span>
-      <strong class="user-pill__value">{{ user_email }}</strong>
+      <strong class="user-pill__value">{{ username }}</strong>
     </div>
   </div>
   {% endif %}
