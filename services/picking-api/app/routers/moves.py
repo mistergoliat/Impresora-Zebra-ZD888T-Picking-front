@@ -146,23 +146,58 @@ async def confirm_move(
         if qty_confirmed < line_payload.qty:
             confirmed_all = False
 
-        target_location = line_payload.location_to if direction > 0 else line_payload.location_from
-        stock_query = select(models.Stock).where(
-            models.Stock.item_code == line_payload.item_code,
-            models.Stock.location == target_location,
-        )
-        result = await session.execute(stock_query)
-        stock = result.scalar_one_or_none()
+        adjustments: list[dict[str, Any]] = []
 
-        if direction > 0:
-            if stock is None:
-                stock = models.Stock(item_code=line_payload.item_code, qty=0, location=target_location)
-                session.add(stock)
-            stock.qty += qty_confirmed
+        if move.doc_type == "TR":
+            if line_payload.location_from == line_payload.location_to:
+                raise HTTPException(status_code=400, detail="El origen y destino no pueden ser iguales para una transferencia")
+
+            source_query = select(models.Stock).where(
+                models.Stock.item_code == line_payload.item_code,
+                models.Stock.location == line_payload.location_from,
+            )
+            source_result = await session.execute(source_query)
+            source_stock = source_result.scalar_one_or_none()
+            if source_stock is None or source_stock.qty < qty_confirmed:
+                raise HTTPException(status_code=400, detail=f"Stock insuficiente para {line_payload.item_code} en {line_payload.location_from}")
+            source_stock.qty -= qty_confirmed
+            adjustments.append({"location": line_payload.location_from, "delta": -qty_confirmed})
+
+            dest_query = select(models.Stock).where(
+                models.Stock.item_code == line_payload.item_code,
+                models.Stock.location == line_payload.location_to,
+            )
+            dest_result = await session.execute(dest_query)
+            dest_stock = dest_result.scalar_one_or_none()
+            if dest_stock is None:
+                dest_stock = models.Stock(
+                    item_code=line_payload.item_code,
+                    qty=0,
+                    location=line_payload.location_to,
+                )
+                session.add(dest_stock)
+            dest_stock.qty += qty_confirmed
+            adjustments.append({"location": line_payload.location_to, "delta": qty_confirmed})
         else:
-            if stock is None or stock.qty < qty_confirmed:
-                raise HTTPException(status_code=400, detail=f"Stock insuficiente para {line_payload.item_code}")
-            stock.qty -= qty_confirmed
+            target_location = line_payload.location_to if direction > 0 else line_payload.location_from
+            stock_query = select(models.Stock).where(
+                models.Stock.item_code == line_payload.item_code,
+                models.Stock.location == target_location,
+            )
+            result = await session.execute(stock_query)
+            stock = result.scalar_one_or_none()
+
+            if direction > 0:
+                if stock is None:
+                    stock = models.Stock(item_code=line_payload.item_code, qty=0, location=target_location)
+                    session.add(stock)
+                stock.qty += qty_confirmed
+                adjustments.append({"location": target_location, "delta": qty_confirmed})
+            else:
+                if stock is None or stock.qty < qty_confirmed:
+                    raise HTTPException(status_code=400, detail=f"Stock insuficiente para {line_payload.item_code}")
+                stock.qty -= qty_confirmed
+                adjustments.append({"location": target_location, "delta": -qty_confirmed})
 
         session.add(
             models.MoveLine(
@@ -181,6 +216,7 @@ async def confirm_move(
                 "qty_confirmed": qty_confirmed,
                 "location_from": line_payload.location_from,
                 "location_to": line_payload.location_to,
+                "adjustments": adjustments,
             }
         )
 
