@@ -133,18 +133,56 @@ async def confirm_move(
     move_type, direction = _resolve_move_type(move.doc_type)
     if not payload.lines:
         raise HTTPException(status_code=400, detail="Debes enviar al menos una línea")
-    if move.lines:
-        raise HTTPException(status_code=409, detail="Las líneas ya fueron registradas para este movimiento")
+    existing_lines: dict[tuple[str, str, str], list[models.MoveLine]] = {}
+    for line in move.lines:
+        key = (line.item_code, line.location_from, line.location_to)
+        existing_lines.setdefault(key, []).append(line)
 
-    confirmed_all = True
     audit_lines: list[dict[str, Any]] = []
     for line_payload in payload.lines:
         await _ensure_product(session, line_payload.item_code)
-        qty_confirmed = line_payload.qty_confirmed if line_payload.qty_confirmed is not None else line_payload.qty
-        if qty_confirmed > line_payload.qty:
+        qty_to_confirm = line_payload.qty_confirmed if line_payload.qty_confirmed is not None else line_payload.qty
+        if qty_to_confirm > line_payload.qty:
             raise HTTPException(status_code=400, detail="La cantidad confirmada no puede superar la cantidad solicitada")
-        if qty_confirmed < line_payload.qty:
-            confirmed_all = False
+
+        key = (line_payload.item_code, line_payload.location_from, line_payload.location_to)
+        lines_for_key = existing_lines.get(key, [])
+        total_available = sum(max(line.qty - line.qty_confirmed, 0) for line in lines_for_key)
+
+        if total_available > 0:
+            if qty_to_confirm > total_available:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "La cantidad confirmada excede la cantidad pendiente para "
+                        f"{line_payload.item_code}. Pendiente: {total_available}"
+                    ),
+                )
+            remaining_to_confirm = qty_to_confirm
+            for candidate in lines_for_key:
+                available = max(candidate.qty - candidate.qty_confirmed, 0)
+                if available <= 0:
+                    continue
+                to_apply = min(available, remaining_to_confirm)
+                candidate.qty_confirmed += to_apply
+                remaining_to_confirm -= to_apply
+                if remaining_to_confirm == 0:
+                    break
+            if remaining_to_confirm != 0:
+                raise HTTPException(status_code=500, detail="No se pudo aplicar la confirmación solicitada")
+        else:
+            new_line = models.MoveLine(
+                move_id=move.id,
+                item_code=line_payload.item_code,
+                qty=line_payload.qty,
+                qty_confirmed=qty_to_confirm,
+                location_from=line_payload.location_from,
+                location_to=line_payload.location_to,
+            )
+            session.add(new_line)
+            move.lines.append(new_line)
+            lines_for_key = existing_lines.setdefault(key, [])
+            lines_for_key.append(new_line)
 
         target_location = line_payload.location_to if direction > 0 else line_payload.location_from
         stock_query = select(models.Stock).where(
@@ -158,34 +196,28 @@ async def confirm_move(
             if stock is None:
                 stock = models.Stock(item_code=line_payload.item_code, qty=0, location=target_location)
                 session.add(stock)
-            stock.qty += qty_confirmed
+            stock.qty += qty_to_confirm
         else:
-            if stock is None or stock.qty < qty_confirmed:
+            if stock is None or stock.qty < qty_to_confirm:
                 raise HTTPException(status_code=400, detail=f"Stock insuficiente para {line_payload.item_code}")
-            stock.qty -= qty_confirmed
+            stock.qty -= qty_to_confirm
 
-        session.add(
-            models.MoveLine(
-                move_id=move.id,
-                item_code=line_payload.item_code,
-                qty=line_payload.qty,
-                qty_confirmed=qty_confirmed,
-                location_from=line_payload.location_from,
-                location_to=line_payload.location_to,
-            )
-        )
+        total_qty = sum(line.qty for line in lines_for_key)
+        total_confirmed = sum(line.qty_confirmed for line in lines_for_key)
         audit_lines.append(
             {
                 "item_code": line_payload.item_code,
-                "qty": line_payload.qty,
-                "qty_confirmed": qty_confirmed,
+                "qty": total_qty,
+                "qty_confirmed": qty_to_confirm,
+                "qty_confirmed_total": total_confirmed,
+                "qty_pending_total": max(total_qty - total_confirmed, 0),
                 "location_from": line_payload.location_from,
                 "location_to": line_payload.location_to,
             }
         )
 
     move.type = move_type
-    move.status = "approved" if confirmed_all else "pending"
+    move.status = "approved" if move.lines and all(line.qty_confirmed >= line.qty for line in move.lines) else "pending"
     move.updated_at = dt.datetime.utcnow()
 
     session.add(
