@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Impresión de etiquetas - Imein Picking{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <header class="panel__header">
+    <div>
+      <h1>Impresión de etiquetas</h1>
+      <p class="panel__description">Encola etiquetas Zebra ZD888T indicando el código y número de copias.</p>
+    </div>
+    <a class="btn btn-tertiary" href="{{ url_for('dashboard') }}">Volver al dashboard</a>
+  </header>
+
+  {% if error %}
+  <div class="alert alert-error" role="alert">{{ error }}</div>
+  {% endif %}
+  {% if success %}
+  <div class="alert alert-success" role="status">{{ success }}</div>
+  {% endif %}
+
+  <form method="post" class="form-card">
+    <div class="form-field">
+      <label for="codes">Códigos (uno por línea)</label>
+      <textarea
+        id="codes"
+        name="codes"
+        rows="6"
+        placeholder="SKU-001\nSKU-002"
+        required
+      ></textarea>
+    </div>
+    <div class="form-field">
+      <label for="copies">Copias por código</label>
+      <input id="copies" type="number" name="copies" min="1" max="10" value="1" required />
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Encolar impresión</button>
+    </div>
+  </form>
+
+  <section class="table-card">
+    <header class="table-card__header">
+      <h2>Trabajos en cola</h2>
+    </header>
+    {% if jobs %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Estado</th>
+          <th>Copias</th>
+          <th>Creado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td class="mono">{{ job.id }}</td>
+          <td>{{ job.status|capitalize }}</td>
+          <td>{{ job.copies }}</td>
+          <td>{{ job.created_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">No hay trabajos pendientes en la cola.</p>
+    {% endif %}
+  </section>
+</section>
+{% endblock %}

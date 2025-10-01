@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Operaciones - Imein Picking{% endblock %}
+
+{% block header_actions %}
+  {% if user_email %}
+  <div class="user-pill" role="presentation">
+    <span class="user-pill__icon" aria-hidden="true">👋</span>
+    <div class="user-pill__meta">
+      <span class="user-pill__label">Conectado</span>
+      <strong class="user-pill__value">{{ user_email }}</strong>
+    </div>
+  </div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<section class="dashboard">
+  <header class="dashboard-hero">
+    <div class="dashboard-hero__content">
+      <h1>Centro de operaciones</h1>
+      <p>
+        Orquesta los flujos de recepción, preparación, conteo e impresión desde un mismo panel.
+        Monitorea el estado de cada módulo y entra directo a la acción que necesitas.
+      </p>
+    </div>
+    <div class="dashboard-hero__stats">
+      <article class="stat-card">
+        <span class="stat-card__label">Órdenes activas</span>
+        <strong class="stat-card__value">128</strong>
+        <span class="stat-card__trend stat-card__trend--up">+12% hoy</span>
+      </article>
+      <article class="stat-card">
+        <span class="stat-card__label">Etiquetas impresas</span>
+        <strong class="stat-card__value">2.340</strong>
+        <span class="stat-card__trend">Turno mañana</span>
+      </article>
+    </div>
+  </header>
+
+  <section class="operation-grid" aria-label="Operaciones disponibles">
+    {% for op in operations %}
+    <article class="operation-card operation-card--{{ op.slug }}">
+      <header class="operation-card__header">
+        <div class="operation-card__icon" aria-hidden="true"></div>
+        <div class="operation-card__meta">
+          <span class="operation-card__status">{{ op.status }}</span>
+          <h2>{{ op.name }}</h2>
+        </div>
+      </header>
+      <p class="operation-card__description">{{ op.description }}</p>
+      <div class="operation-card__actions">
+        <a class="btn btn-primary" href="{{ op.href }}">{{ op.cta }}</a>
+        {% if op.doc_type %}
+        <span class="operation-card__tag">{{ op.doc_type }}</span>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+    <article class="operation-card operation-card--print">
+      <header class="operation-card__header">
+        <div class="operation-card__icon" aria-hidden="true"></div>
+        <div class="operation-card__meta">
+          <span class="operation-card__status">Disponible</span>
+          <h2>Impresión de etiquetas</h2>
+        </div>
+      </header>
+      <p class="operation-card__description">Genera etiquetas CODE128 para los productos desde la cola centralizada.</p>
+      <div class="operation-card__actions">
+        <a class="btn btn-primary" href="{{ url_for('print_labels') }}">Ir a impresión</a>
+      </div>
+    </article>
+  </section>
+</section>
+{% endblock %}

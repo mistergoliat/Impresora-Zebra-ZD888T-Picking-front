@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Ingreso a Imein Picking{% endblock %}
+{% block content %}
+<section class="login-screen">
+  <div class="login-intro">
+    <h1>Hola, bienvenido a Imein Picking</h1>
+    <p>
+      Centraliza el seguimiento de tus pedidos, optimiza rutas y mantén los indicadores
+      críticos siempre visibles para tu equipo.
+    </p>
+    <div class="login-tiles">
+      <article class="tile">
+        <span class="tile__label">Productividad diaria</span>
+        <span class="tile__value">+18%</span>
+        <span class="tile__trend">vs. promedio mensual</span>
+      </article>
+      <article class="tile">
+        <span class="tile__label">Órdenes al día</span>
+        <span class="tile__value">1,560</span>
+        <span class="tile__trend">Listas para despacho</span>
+      </article>
+      <article class="tile">
+        <span class="tile__label">Exactitud de inventario</span>
+        <span class="tile__value">99.4%</span>
+        <span class="tile__trend">Auditoría continua</span>
+      </article>
+    </div>
+  </div>
+  <form class="login-card" method="post" action="{{ url_for('login_submit') }}">
+    <h2>Iniciar sesión</h2>
+    <p>Ingresa tus credenciales corporativas para continuar.</p>
+
+    {% if form_error %}
+    <div class="form-error" role="alert">{{ form_error }}</div>
+    {% endif %}
+
+    <div class="form-group">
+      <label for="email">Correo electrónico</label>
+      <input
+        type="email"
+        id="email"
+        class="form-control"
+        name="email"
+        placeholder="nombre.apellido@imein.com"
+        value="{{ email }}"
+        required
+      />
+    </div>
+
+    <div class="form-group">
+      <label for="password">Contraseña</label>
+      <input
+        type="password"
+        id="password"
+        class="form-control"
+        name="password"
+        placeholder="••••••••"
+        required
+      />
+    </div>
+
+    <div class="form-meta">
+      <label>
+        <input type="checkbox" name="remember" />
+        Recordarme
+      </label>
+      <a href="#">¿Olvidaste tu contraseña?</a>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Acceder</button>
+      <button type="button" class="btn btn-secondary">Solicitar acceso</button>
+    </div>
+  </form>
+</section>
+{% endblock %}
