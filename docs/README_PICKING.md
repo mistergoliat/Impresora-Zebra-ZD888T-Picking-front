@@ -22,7 +22,7 @@ Este documento resume los componentes principales de la solución de picking bas
 docker compose -f ops/docker-compose.yml up --build
 ```
 
-1. Crear un archivo `.env` basado en `.env.example`.
+1. Crear un archivo `.env` en la raíz copiando `samples/env/.env` (o basándose en él).
 2. Ejecutar el comando anterior para levantar los contenedores.
 3. Iniciar sesión con usuario `admin` (contraseña definida en base de datos) y realizar una importación inicial.
 4. Configurar el agente de impresión en Windows según `host/print-agent/README`.

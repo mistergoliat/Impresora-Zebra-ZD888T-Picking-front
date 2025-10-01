@@ -4,13 +4,14 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 BASE_DIR = Path(__file__).parent
 API_BASE_URL = os.getenv("PICKING_API_URL", "http://picking-api:8000")
 API_TIMEOUT = float(os.getenv("PICKING_API_TIMEOUT", "10"))
+LOGIN_ENDPOINT_OVERRIDE = os.getenv("PICKING_UI_LOGIN_ENDPOINT")
 
 app = FastAPI(title="Picking UI", version="0.1.0")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
@@ -110,16 +111,40 @@ async def login(request: Request):
             "request": request,
             "form_error": None,
             "username": request.cookies.get("username", ""),
+            "login_api_endpoint": LOGIN_ENDPOINT_OVERRIDE
+            or str(request.url_for("login_submit")),
         },
     )
 
 
 @app.post("/login")
-async def login_submit(request: Request, username: str = Form(...), password: str = Form(...)):
+async def login_submit(request: Request):
+    content_type = request.headers.get("content-type", "")
+    is_json_request = "application/json" in content_type.lower()
+
+    username = None
+    password = None
+
+    if is_json_request:
+        try:
+            payload = await request.json()
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict):
+            username = payload.get("username")
+            password = payload.get("password")
+    else:
+        form = await request.form()
+        username = form.get("username")
+        password = form.get("password")
+
     if not username or not password:
+        message = "Completa usuario y contraseña para continuar."
+        if is_json_request:
+            return JSONResponse({"detail": message}, status_code=status.HTTP_400_BAD_REQUEST)
         context = {
             "request": request,
-            "form_error": "Completa usuario y contraseña para continuar.",
+            "form_error": message,
             "username": username,
         }
         return templates.TemplateResponse("login.html", context, status_code=status.HTTP_400_BAD_REQUEST)
@@ -129,16 +154,15 @@ async def login_submit(request: Request, username: str = Form(...), password: st
             "POST",
             "/auth/login",
             token=None,
-resp = client.post(
-    "http://localhost:8000/auth/login",
-    headers={"Content-Type": "application/json"},
-    json={"username": username, "password": password},
-    timeout=10,
-)
+            json={"username": username, "password": password},
+        )
     except httpx.RequestError:
+        message = "No se pudo contactar la API de picking."
+        if is_json_request:
+            return JSONResponse({"detail": message}, status_code=status.HTTP_502_BAD_GATEWAY)
         context = {
             "request": request,
-            "form_error": "No se pudo contactar la API de picking.",
+            "form_error": message,
             "username": username,
         }
         return templates.TemplateResponse("login.html", context, status_code=status.HTTP_502_BAD_GATEWAY)
@@ -146,6 +170,8 @@ resp = client.post(
     if api_response.status_code != 200:
         default_message = "Credenciales inválidas" if api_response.status_code in {400, 401} else "Error autenticando"
         message = _safe_detail(api_response, default_message)
+        if is_json_request:
+            return JSONResponse({"detail": message}, status_code=api_response.status_code)
         context = {
             "request": request,
             "form_error": message,
@@ -157,7 +183,11 @@ resp = client.post(
     if not token:
         raise HTTPException(status_code=500, detail="Token inválido devuelto por la API")
 
-    response = RedirectResponse(url=request.url_for("dashboard"), status_code=status.HTTP_303_SEE_OTHER)
+    redirect_url = str(request.url_for("dashboard"))
+    if is_json_request:
+        response = JSONResponse({"access_token": token, "redirect_to": redirect_url})
+    else:
+        response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
     response.set_cookie("auth_token", token, httponly=True, samesite="lax")
     response.set_cookie("username", username, samesite="lax")
     return response
