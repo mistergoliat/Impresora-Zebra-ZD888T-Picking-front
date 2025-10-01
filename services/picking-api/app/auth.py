@@ -2,6 +2,7 @@ import datetime as dt
 import os
 from typing import Any, Optional
 
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -26,7 +27,17 @@ class TokenData(BaseModel):
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except ValueError:
+        # bcrypt>=4 raises ValueError when passlib performs its wraparound
+        # detection with long passwords. Fallback to the bcrypt module so we
+        # can still authenticate seeded users even if the environment ships
+        # with the newer backend.
+        try:
+            return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+        except ValueError:
+            return False
 
 
 def get_password_hash(password: str) -> str:
