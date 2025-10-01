@@ -129,8 +129,12 @@ async def login_submit(request: Request, username: str = Form(...), password: st
             "POST",
             "/auth/login",
             token=None,
-            json={"username": username, "password": password},
-        )
+resp = client.post(
+    "http://localhost:8000/auth/login",
+    headers={"Content-Type": "application/json"},
+    json={"username": username, "password": password},
+    timeout=10,
+)
     except httpx.RequestError:
         context = {
             "request": request,
