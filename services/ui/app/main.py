@@ -86,7 +86,7 @@ def _dashboard_context(request: Request) -> dict:
     return {
         "request": request,
         "operations": OPERATIONS,
-        "user_email": request.cookies.get("user_email"),
+        "username": request.cookies.get("username"),
     }
 
 
@@ -109,18 +109,18 @@ async def login(request: Request):
         {
             "request": request,
             "form_error": None,
-            "email": request.cookies.get("user_email", ""),
+            "username": request.cookies.get("username", ""),
         },
     )
 
 
 @app.post("/login")
-async def login_submit(request: Request, email: str = Form(...), password: str = Form(...)):
-    if not email or not password:
+async def login_submit(request: Request, username: str = Form(...), password: str = Form(...)):
+    if not username or not password:
         context = {
             "request": request,
-            "form_error": "Completa correo y contraseña para continuar.",
-            "email": email,
+            "form_error": "Completa usuario y contraseña para continuar.",
+            "username": username,
         }
         return templates.TemplateResponse("login.html", context, status_code=status.HTTP_400_BAD_REQUEST)
 
@@ -129,13 +129,13 @@ async def login_submit(request: Request, email: str = Form(...), password: str =
             "POST",
             "/auth/login",
             token=None,
-            data={"username": email, "password": password},
+            data={"username": username, "password": password},
         )
     except httpx.RequestError:
         context = {
             "request": request,
             "form_error": "No se pudo contactar la API de picking.",
-            "email": email,
+            "username": username,
         }
         return templates.TemplateResponse("login.html", context, status_code=status.HTTP_502_BAD_GATEWAY)
 
@@ -145,7 +145,7 @@ async def login_submit(request: Request, email: str = Form(...), password: str =
         context = {
             "request": request,
             "form_error": message,
-            "email": email,
+            "username": username,
         }
         return templates.TemplateResponse("login.html", context, status_code=status.HTTP_401_UNAUTHORIZED)
 
@@ -155,7 +155,7 @@ async def login_submit(request: Request, email: str = Form(...), password: str =
 
     response = RedirectResponse(url=request.url_for("dashboard"), status_code=status.HTTP_303_SEE_OTHER)
     response.set_cookie("auth_token", token, httponly=True, samesite="lax")
-    response.set_cookie("user_email", email, samesite="lax")
+    response.set_cookie("username", username, samesite="lax")
     return response
 
 
