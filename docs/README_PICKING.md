@@ -27,6 +27,20 @@ docker compose -f ops/docker-compose.yml up --build
 3. Iniciar sesión con usuario `admin` (contraseña definida en base de datos) y realizar una importación inicial.
 4. Configurar el agente de impresión en Windows según `host/print-agent/README`.
 
+### Aprovisionamiento del rol `app`
+
+- El contenedor de Postgres ejecuta `db/create-app-role.sh` durante la inicialización para crear (o actualizar) el rol `app` con la contraseña definida en `APP_ROLE_PASSWORD` (o, en su defecto, `PGPASSWORD`/`POSTGRES_PASSWORD`) y opcionalmente traspasar la propiedad de la base de datos `picking`.
+- Para entornos existentes donde ya se creó el volumen de datos, asegúrate de que el stack esté en ejecución y luego ejecuta el script dentro del contenedor para recrear el rol:
+
+  ```bash
+  docker compose --env-file ops/.env -f ops/docker-compose.yml exec db \
+    bash /docker-entrypoint-initdb.d/create-app-role.sh
+  ```
+
+  (Si prefieres ejecutarlo con `docker compose run`, exporta `PGHOST=db` en el contenedor antes de invocar el script.)
+
+- Alternativamente, reciclar los volúmenes (`docker compose --env-file ops/.env -f ops/docker-compose.yml down -v`) volverá a ejecutar todos los scripts de inicialización.
+
 ## Estructura de carpetas
 
 - `services/picking-api`: Código de la API, modelos y routers de FastAPI.
