@@ -80,14 +80,38 @@ async def create_move(
 ) -> schemas.MoveResponse:
     require_role(user, "operator")
     move_type, _ = _resolve_move_type(payload.doc_type)
+    seen_lines: set[tuple[str, str, str]] = set()
+    move_lines: list[models.MoveLine] = []
+    for line_payload in payload.lines:
+        await _ensure_product(session, line_payload.item_code)
+        line_key = (
+            line_payload.item_code,
+            line_payload.location_from,
+            line_payload.location_to,
+        )
+        if line_key in seen_lines:
+            raise HTTPException(status_code=400, detail="La línea del producto ya fue agregada")
+        seen_lines.add(line_key)
+        move_lines.append(
+            models.MoveLine(
+                item_code=line_payload.item_code,
+                qty=line_payload.qty,
+                qty_confirmed=0,
+                location_from=line_payload.location_from,
+                location_to=line_payload.location_to,
+            )
+        )
+
     move = models.Move(
         type=move_type,
         doc_type=payload.doc_type,
         doc_number=payload.doc_number,
-        status="pending",
+        status="draft",
         created_by=user.id,
         updated_at=dt.datetime.utcnow(),
     )
+    for line in move_lines:
+        move.lines.append(line)
     session.add(move)
     session.add(
         models.Audit(
@@ -103,8 +127,8 @@ async def create_move(
         )
     )
     await session.commit()
-    await session.refresh(move)
-    return _build_move_response(move)
+    refreshed = await _get_move(session, str(move.id))
+    return _build_move_response(refreshed)
 
 
 @router.get("/{move_id}", response_model=schemas.MoveResponse)
@@ -133,22 +157,50 @@ async def confirm_move(
     move_type, direction = _resolve_move_type(move.doc_type)
     if not payload.lines:
         raise HTTPException(status_code=400, detail="Debes enviar al menos una línea")
-    if move.lines:
-        raise HTTPException(status_code=409, detail="Las líneas ya fueron registradas para este movimiento")
+    if not move.lines:
+        raise HTTPException(status_code=409, detail="El movimiento no tiene líneas registradas")
 
-    confirmed_all = True
+    line_index: dict[tuple[str, str, str], models.MoveLine] = {
+        (line.item_code, line.location_from, line.location_to): line for line in move.lines
+    }
+
+    confirmed_any = False
     audit_lines: list[dict[str, Any]] = []
     for line_payload in payload.lines:
-        await _ensure_product(session, line_payload.item_code)
-        qty_confirmed = line_payload.qty_confirmed if line_payload.qty_confirmed is not None else line_payload.qty
-        if qty_confirmed > line_payload.qty:
-            raise HTTPException(status_code=400, detail="La cantidad confirmada no puede superar la cantidad solicitada")
-        if qty_confirmed < line_payload.qty:
-            confirmed_all = False
+        line_key = (
+            line_payload.item_code,
+            line_payload.location_from,
+            line_payload.location_to,
+        )
+        line = line_index.get(line_key)
+        if line is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Producto {line_payload.item_code} no está registrado en el movimiento",
+            )
 
-        target_location = line_payload.location_to if direction > 0 else line_payload.location_from
+        if line_payload.qty > line.qty:
+            raise HTTPException(status_code=400, detail="La cantidad solicitada excede la cantidad registrada")
+
+        qty_to_confirm = (
+            line_payload.qty_confirmed
+            if line_payload.qty_confirmed is not None
+            else line_payload.qty
+        )
+        if line_payload.qty_confirmed is not None and line_payload.qty_confirmed > line_payload.qty:
+            raise HTTPException(status_code=400, detail="La cantidad confirmada no puede superar la cantidad solicitada")
+        if qty_to_confirm <= 0:
+            raise HTTPException(status_code=400, detail="La cantidad confirmada debe ser mayor a cero")
+
+        pending_qty = line.qty - line.qty_confirmed
+        if qty_to_confirm > pending_qty:
+            raise HTTPException(status_code=400, detail="La cantidad confirmada excede la cantidad pendiente")
+
+        confirmed_any = True
+
+        target_location = line.location_to if direction > 0 else line.location_from
         stock_query = select(models.Stock).where(
-            models.Stock.item_code == line_payload.item_code,
+            models.Stock.item_code == line.item_code,
             models.Stock.location == target_location,
         )
         result = await session.execute(stock_query)
@@ -156,36 +208,38 @@ async def confirm_move(
 
         if direction > 0:
             if stock is None:
-                stock = models.Stock(item_code=line_payload.item_code, qty=0, location=target_location)
+                stock = models.Stock(item_code=line.item_code, qty=0, location=target_location)
                 session.add(stock)
-            stock.qty += qty_confirmed
+            stock.qty += qty_to_confirm
         else:
-            if stock is None or stock.qty < qty_confirmed:
-                raise HTTPException(status_code=400, detail=f"Stock insuficiente para {line_payload.item_code}")
-            stock.qty -= qty_confirmed
+            if stock is None or stock.qty < qty_to_confirm:
+                raise HTTPException(status_code=400, detail=f"Stock insuficiente para {line.item_code}")
+            stock.qty -= qty_to_confirm
 
-        session.add(
-            models.MoveLine(
-                move_id=move.id,
-                item_code=line_payload.item_code,
-                qty=line_payload.qty,
-                qty_confirmed=qty_confirmed,
-                location_from=line_payload.location_from,
-                location_to=line_payload.location_to,
-            )
-        )
+        line.qty_confirmed += qty_to_confirm
+
         audit_lines.append(
             {
-                "item_code": line_payload.item_code,
+                "item_code": line.item_code,
                 "qty": line_payload.qty,
-                "qty_confirmed": qty_confirmed,
-                "location_from": line_payload.location_from,
-                "location_to": line_payload.location_to,
+                "qty_confirmed": qty_to_confirm,
+                "qty_confirmed_total": line.qty_confirmed,
+                "location_from": line.location_from,
+                "location_to": line.location_to,
             }
         )
 
+    if not confirmed_any:
+        raise HTTPException(status_code=400, detail="Debes confirmar al menos una cantidad")
+
     move.type = move_type
-    move.status = "approved" if confirmed_all else "pending"
+    confirmed_all = all(line.qty_confirmed == line.qty for line in move.lines)
+    if confirmed_all:
+        move.status = "approved"
+        move.approved_by = user.id
+    else:
+        move.status = "pending"
+        move.approved_by = None
     move.updated_at = dt.datetime.utcnow()
 
     session.add(

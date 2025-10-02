@@ -56,17 +56,18 @@ class PrintAckRequest(BaseModel):
     error: Optional[str] = None
 
 
-class MoveCreateRequest(BaseModel):
-    doc_type: str = Field(regex="^(PO|SO|TR|RT)$")
-    doc_number: str = Field(min_length=1, max_length=64)
-
-
 class MoveLineInput(BaseModel):
     item_code: str
     qty: int = Field(gt=0)
     qty_confirmed: Optional[int] = Field(default=None, ge=0)
     location_from: str = Field(default="MAIN", max_length=64)
     location_to: str = Field(default="MAIN", max_length=64)
+
+
+class MoveCreateRequest(BaseModel):
+    doc_type: str = Field(pattern="^(PO|SO|TR|RT)$")
+    doc_number: str = Field(min_length=1, max_length=64)
+    lines: list[MoveLineInput] = Field(min_length=1)
 
 
 class MoveConfirmRequest(BaseModel):
