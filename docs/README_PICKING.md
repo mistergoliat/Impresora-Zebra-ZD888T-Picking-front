@@ -39,6 +39,13 @@ docker compose -f ops/docker-compose.yml up --build
 
   (Si prefieres ejecutarlo con `docker compose run`, exporta `PGHOST=db` en el contenedor antes de invocar el script.)
 
+- El contenedor de Postgres ejecuta `db/create-app-role.sh` durante la inicialización para crear (o actualizar) el rol `app` con la contraseña definida en `APP_ROLE_PASSWORD` (o, en su defecto, `PGPASSWORD`) y opcionalmente traspasar la propiedad de la base de datos `picking`.
+- Para entornos existentes donde ya se creó el volumen de datos, ejecute manualmente el script dentro del contenedor para recrear el rol:
+
+  ```bash
+  docker compose --env-file ops/.env -f ops/docker-compose.yml run --rm db \
+    bash /docker-entrypoint-initdb.d/create-app-role.sh
+  ```
 - Alternativamente, reciclar los volúmenes (`docker compose --env-file ops/.env -f ops/docker-compose.yml down -v`) volverá a ejecutar todos los scripts de inicialización.
 
 ## Estructura de carpetas
