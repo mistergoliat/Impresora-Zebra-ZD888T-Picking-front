@@ -94,10 +94,122 @@ body {
   letter-spacing: 0.015em;
 }
 
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.health-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  background: rgba(12, 24, 45, 0.04);
+  border: 1px solid rgba(12, 24, 45, 0.08);
+}
+
+.health-indicator--ok {
+  color: var(--brand-accent);
+}
+
+.health-indicator--down {
+  color: var(--brand-primary);
+}
+
+.health-indicator__dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 4px rgba(31, 191, 117, 0.15);
+}
+
+.health-indicator--down .health-indicator__dot {
+  box-shadow: 0 0 0 4px rgba(224, 32, 32, 0.15);
+}
+
+.health-indicator__message {
+  color: var(--text-soft);
+  font-size: 0.8rem;
+}
+
 .app-main {
   flex: 1;
   display: flex;
   padding: clamp(1.5rem, 3vw, 3rem);
+}
+
+.dashboard-status {
+  margin-top: 2.5rem;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.alert {
+  padding: 0.95rem 1.2rem;
+  border-radius: 14px;
+  font-size: 0.95rem;
+  border: 1px solid transparent;
+  background: rgba(12, 24, 45, 0.04);
+  color: var(--text-soft);
+}
+
+.alert--error {
+  background: rgba(224, 32, 32, 0.1);
+  border-color: rgba(224, 32, 32, 0.2);
+  color: var(--brand-primary);
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 18px;
+  border: 1px solid rgba(12, 24, 45, 0.08);
+  box-shadow: 0 20px 36px -32px rgba(12, 24, 45, 0.4);
+}
+
+.card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem 0.75rem;
+}
+
+.card__header h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--brand-secondary);
+}
+
+.card__action {
+  font-size: 0.9rem;
+  color: var(--brand-primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.card__action:hover {
+  text-decoration: underline;
+}
+
+.card__body {
+  padding: 0 1.5rem 1.5rem;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.link {
+  color: var(--brand-primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.link:hover {
+  text-decoration: underline;
 }
 
 .app-footer {
@@ -688,6 +800,16 @@ body {
 .status-chip--pending {
   background: rgba(255, 196, 61, 0.16);
   color: #9a6a06;
+}
+
+.status-chip--draft {
+  background: rgba(95, 108, 123, 0.12);
+  color: #404a57;
+}
+
+.status-chip--cancelled {
+  background: rgba(224, 32, 32, 0.12);
+  color: var(--brand-primary);
 }
 
 .table-card {

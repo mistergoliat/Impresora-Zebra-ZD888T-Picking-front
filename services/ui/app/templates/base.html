@@ -21,7 +21,24 @@
             <small>Control inteligente de operaciones</small>
           </span>
         </div>
-        {% block header_actions %}{% endblock %}
+        <div class="header-status">
+          {% if api_health %}
+          <div
+            class="health-indicator {{ 'health-indicator--ok' if api_health.online else 'health-indicator--down' }}"
+            role="status"
+            aria-live="polite"
+          >
+            <span class="health-indicator__dot" aria-hidden="true"></span>
+            <span class="health-indicator__label"
+              >API {{ 'operativa' if api_health.online else 'sin conexión' }}</span
+            >
+            {% if api_health.message %}
+            <span class="health-indicator__message">{{ api_health.message }}</span>
+            {% endif %}
+          </div>
+          {% endif %}
+          {% block header_actions %}{% endblock %}
+        </div>
       </header>
       <main class="app-main">
         {% block content %}{% endblock %}

@@ -70,5 +70,48 @@
       </div>
     </article>
   </section>
+
+  <section class="dashboard-status" aria-label="Estado reciente">
+    {% if moves_error %}
+    <div class="alert alert--error" role="alert">{{ moves_error }}</div>
+    {% endif %}
+
+    {% if moves_preview %}
+    <div class="card">
+      <header class="card__header">
+        <h2>Últimos movimientos</h2>
+        <a class="card__action" href="{{ url_for('moves_new') }}">Nuevo movimiento</a>
+      </header>
+      <div class="card__body">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Tipo</th>
+              <th scope="col">Documento</th>
+              <th scope="col">Estado</th>
+              <th scope="col">Actualizado</th>
+              <th scope="col" class="text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for move in moves_preview %}
+            <tr>
+              <td data-title="Tipo">{{ move.doc_type }}</td>
+              <td data-title="Documento">{{ move.doc_number }}</td>
+              <td data-title="Estado">
+                <span class="status-chip status-chip--{{ move.status }}">{{ move.status|title }}</span>
+              </td>
+              <td data-title="Actualizado">{{ move.updated_at }}</td>
+              <td data-title="Acciones" class="text-right">
+                <a class="link" href="{{ url_for('move_detail', move_id=move.id) }}">Ver detalle</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </section>
 </section>
 {% endblock %}

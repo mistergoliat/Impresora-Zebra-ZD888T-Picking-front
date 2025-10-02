@@ -1,0 +1,400 @@
+{
+  "info": {
+    "_postman_id": "7a20b8fb-ea63-4c5b-9af6-915a0b42710c",
+    "name": "Picking API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        }
+      }
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  var json = pm.response.json();",
+                  "  pm.environment.set('token', json.access_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "me"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "refresh"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Import ABCXYZ",
+      "item": [
+        {
+          "name": "Upsert Products",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"item_code\": \"ABC123\",\n      \"item_name\": \"Ejemplo ABC\",\n      \"unit_cost\": 10,\n      \"ABC\": \"A\",\n      \"XYZ\": \"X\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/import/abcxyz",
+              "host": ["{{base_url}}"],
+              "path": ["import", "abcxyz"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Probe",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/import/abcxyz/probe",
+              "host": ["{{base_url}}"],
+              "path": ["import", "abcxyz", "probe"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Moves",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/moves",
+              "host": ["{{base_url}}"],
+              "path": ["moves"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"doc_type\": \"PO\",\n  \"doc_number\": \"PO-0001\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/moves",
+              "host": ["{{base_url}}"],
+              "path": ["moves"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  var json = pm.response.json();",
+                  "  pm.environment.set('move_id', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/moves/{{move_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["moves", "{{move_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lines\": [\n    {\n      \"item_code\": \"ABC123\",\n      \"qty\": 1,\n      \"qty_confirmed\": 1,\n      \"location_from\": \"MAIN\",\n      \"location_to\": \"MAIN\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/moves/{{move_id}}/confirm",
+              "host": ["{{base_url}}"],
+              "path": ["moves", "{{move_id}}", "confirm"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Impresión",
+      "item": [
+        {
+          "name": "Probe",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/print/probe",
+              "host": ["{{base_url}}"],
+              "path": ["print", "probe"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Enqueue Product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"item_code\": \"ABC123\",\n  \"item_name\": \"Ejemplo ABC\",\n  \"fecha_ingreso\": \"2025-10-02\",\n  \"copies\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/print/product",
+              "host": ["{{base_url}}"],
+              "path": ["print", "product"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "  var json = pm.response.json();",
+                  "  pm.environment.set('job_id', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Jobs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/print/jobs",
+              "host": ["{{base_url}}"],
+              "path": ["print", "jobs"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Ack",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"sent\",\n  \"error\": null\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/print/jobs/{{job_id}}/ack",
+              "host": ["{{base_url}}"],
+              "path": ["print", "jobs", "{{job_id}}", "ack"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Doc Scan",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"scan\": \"FA-000123\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/doc/scan",
+          "host": ["{{base_url}}"],
+          "path": ["doc", "scan"]
+        }
+      },
+      "response": []
+    }
+  ]
+}

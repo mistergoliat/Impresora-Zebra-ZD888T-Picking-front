@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, Form, HTTPException, Request, status
+from fastapi import FastAPI, Form, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -79,23 +79,122 @@ def _safe_detail(response: httpx.Response, default: str) -> str:
         data = response.json()
     except ValueError:
         return default
-    detail = data.get("detail") if isinstance(data, dict) else None
-    return detail if isinstance(detail, str) else default
+    if isinstance(data, dict):
+        detail = data.get("detail")
+        if isinstance(detail, str):
+            return detail
+    return default
 
 
-def _dashboard_context(request: Request) -> dict:
-    return {
+async def _build_base_context(request: Request) -> dict[str, Any]:
+    context: dict[str, Any] = {
         "request": request,
-        "operations": OPERATIONS,
         "username": request.cookies.get("username"),
     }
+    try:
+        response = await _api_request("GET", "/health", token=None)
+        if response.status_code == 200:
+            payload = response.json()
+            is_ok = isinstance(payload, dict) and payload.get("status") == "ok"
+            context["api_health"] = {
+                "online": is_ok,
+                "status": payload.get("status", "unknown") if isinstance(payload, dict) else "unknown",
+                "message": None if is_ok else "Respuesta inesperada de la API",
+            }
+        else:
+            context["api_health"] = {
+                "online": False,
+                "status": "error",
+                "message": f"Código {response.status_code}",
+            }
+    except httpx.RequestError as exc:
+        context["api_health"] = {
+            "online": False,
+            "status": "offline",
+            "message": str(exc),
+        }
+    return context
+
+
+async def _render_template(
+    template_name: str,
+    request: Request,
+    context: dict[str, Any],
+    *,
+    status_code: int = status.HTTP_200_OK,
+) -> HTMLResponse:
+    base_context = await _build_base_context(request)
+    base_context.update(context)
+    return templates.TemplateResponse(template_name, base_context, status_code=status_code)
+
+
+def _redirect_to_login(request: Request) -> RedirectResponse:
+    response = RedirectResponse(url=request.url_for("login"), status_code=status.HTTP_303_SEE_OTHER)
+    response.delete_cookie("auth_token")
+    response.delete_cookie("username")
+    return response
 
 
 @app.get("/", response_class=HTMLResponse, name="dashboard")
 async def dashboard(request: Request):
-    if _require_token(request) is None:
-        return RedirectResponse(url=request.url_for("login"), status_code=status.HTTP_303_SEE_OTHER)
-    return templates.TemplateResponse("dashboard.html", _dashboard_context(request))
+    token = _require_token(request)
+    if token is None:
+        return _redirect_to_login(request)
+
+    try:
+        me_response = await _api_request("GET", "/auth/me", token)
+    except httpx.RequestError:
+        return await _render_template(
+            "dashboard.html",
+            request,
+            {
+                "operations": OPERATIONS,
+                "moves_preview": [],
+                "moves_error": "No se pudo contactar la API de picking.",
+            },
+            status_code=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    if me_response.status_code in {401, 403}:
+        return _redirect_to_login(request)
+    if me_response.status_code != 200:
+        return await _render_template(
+            "dashboard.html",
+            request,
+            {
+                "operations": OPERATIONS,
+                "moves_preview": [],
+                "moves_error": _safe_detail(me_response, "No se pudo validar la sesión"),
+            },
+            status_code=me_response.status_code,
+        )
+
+    moves_preview: list[dict[str, Any]] = []
+    moves_error: str | None = None
+    try:
+        moves_response = await _api_request("GET", "/moves", token, params={"limit": 5})
+    except httpx.RequestError:
+        moves_error = "No se pudo obtener la lista de movimientos."
+    else:
+        if moves_response.status_code == 200:
+            try:
+                moves_preview = moves_response.json()
+            except ValueError:
+                moves_error = "Respuesta inválida de la API."
+        elif moves_response.status_code in {401, 403}:
+            return _redirect_to_login(request)
+        else:
+            moves_error = _safe_detail(moves_response, "No se pudo obtener la lista de movimientos.")
+
+    return await _render_template(
+        "dashboard.html",
+        request,
+        {
+            "operations": OPERATIONS,
+            "moves_preview": moves_preview,
+            "moves_error": moves_error,
+        },
+    )
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -105,14 +204,13 @@ async def dashboard_alias(request: Request):
 
 @app.get("/login", response_class=HTMLResponse)
 async def login(request: Request):
-    return templates.TemplateResponse(
+    return await _render_template(
         "login.html",
+        request,
         {
-            "request": request,
             "form_error": None,
             "username": request.cookies.get("username", ""),
-            "login_api_endpoint": LOGIN_ENDPOINT_OVERRIDE
-            or str(request.url_for("login_submit")),
+            "login_api_endpoint": LOGIN_ENDPOINT_OVERRIDE or str(request.url_for("login_submit")),
         },
     )
 
@@ -142,12 +240,16 @@ async def login_submit(request: Request):
         message = "Completa usuario y contraseña para continuar."
         if is_json_request:
             return JSONResponse({"detail": message}, status_code=status.HTTP_400_BAD_REQUEST)
-        context = {
-            "request": request,
-            "form_error": message,
-            "username": username,
-        }
-        return templates.TemplateResponse("login.html", context, status_code=status.HTTP_400_BAD_REQUEST)
+        return await _render_template(
+            "login.html",
+            request,
+            {
+                "form_error": message,
+                "username": username or "",
+                "login_api_endpoint": LOGIN_ENDPOINT_OVERRIDE or str(request.url_for("login_submit")),
+            },
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
 
     try:
         api_response = await _api_request(
@@ -160,28 +262,36 @@ async def login_submit(request: Request):
         message = "No se pudo contactar la API de picking."
         if is_json_request:
             return JSONResponse({"detail": message}, status_code=status.HTTP_502_BAD_GATEWAY)
-        context = {
-            "request": request,
-            "form_error": message,
-            "username": username,
-        }
-        return templates.TemplateResponse("login.html", context, status_code=status.HTTP_502_BAD_GATEWAY)
+        return await _render_template(
+            "login.html",
+            request,
+            {
+                "form_error": message,
+                "username": username,
+                "login_api_endpoint": LOGIN_ENDPOINT_OVERRIDE or str(request.url_for("login_submit")),
+            },
+            status_code=status.HTTP_502_BAD_GATEWAY,
+        )
 
     if api_response.status_code != 200:
         default_message = "Credenciales inválidas" if api_response.status_code in {400, 401} else "Error autenticando"
         message = _safe_detail(api_response, default_message)
         if is_json_request:
             return JSONResponse({"detail": message}, status_code=api_response.status_code)
-        context = {
-            "request": request,
-            "form_error": message,
-            "username": username,
-        }
-        return templates.TemplateResponse("login.html", context, status_code=status.HTTP_401_UNAUTHORIZED)
+        return await _render_template(
+            "login.html",
+            request,
+            {
+                "form_error": message,
+                "username": username,
+                "login_api_endpoint": LOGIN_ENDPOINT_OVERRIDE or str(request.url_for("login_submit")),
+            },
+            status_code=api_response.status_code,
+        )
 
     token = api_response.json().get("access_token")
     if not token:
-        raise HTTPException(status_code=500, detail="Token inválido devuelto por la API")
+        return JSONResponse({"detail": "Token inválido devuelto por la API"}, status_code=status.HTTP_502_BAD_GATEWAY)
 
     redirect_url = str(request.url_for("dashboard"))
     if is_json_request:
@@ -197,17 +307,19 @@ async def login_submit(request: Request):
 async def moves_new(request: Request):
     token = _require_token(request)
     if token is None:
-        return RedirectResponse(url=request.url_for("login"), status_code=status.HTTP_303_SEE_OTHER)
+        return _redirect_to_login(request)
     selected_type = request.query_params.get("type")
     selected = next((op for op in OPERATIONS if op["doc_type"] == selected_type), None)
-    context = {
-        "request": request,
-        "operations": OPERATIONS,
-        "selected": selected,
-        "form_error": None,
-        "doc_number": "",
-    }
-    return templates.TemplateResponse("moves_new.html", context)
+    return await _render_template(
+        "moves_new.html",
+        request,
+        {
+            "operations": OPERATIONS,
+            "selected": selected,
+            "form_error": None,
+            "doc_number": "",
+        },
+    )
 
 
 @app.post("/moves/new")
@@ -218,20 +330,25 @@ async def moves_create(
 ):
     token = _require_token(request)
     if token is None:
-        return RedirectResponse(url=request.url_for("login"), status_code=status.HTTP_303_SEE_OTHER)
+        return _redirect_to_login(request)
 
     payload = {"doc_type": doc_type, "doc_number": doc_number}
     api_response = await _api_request("POST", "/moves", token, json=payload)
+    if api_response.status_code in {401, 403}:
+        return _redirect_to_login(request)
     if api_response.status_code != status.HTTP_201_CREATED:
         selected = next((op for op in OPERATIONS if op["doc_type"] == doc_type), None)
-        context = {
-            "request": request,
-            "operations": OPERATIONS,
-            "selected": selected,
-            "form_error": _safe_detail(api_response, "No se pudo crear el movimiento"),
-            "doc_number": doc_number,
-        }
-        return templates.TemplateResponse("moves_new.html", context, status_code=api_response.status_code)
+        return await _render_template(
+            "moves_new.html",
+            request,
+            {
+                "operations": OPERATIONS,
+                "selected": selected,
+                "form_error": _safe_detail(api_response, "No se pudo crear el movimiento"),
+                "doc_number": doc_number,
+            },
+            status_code=api_response.status_code,
+        )
 
     move = api_response.json()
     return RedirectResponse(
@@ -244,52 +361,64 @@ async def moves_create(
 async def move_detail(request: Request, move_id: str):
     token = _require_token(request)
     if token is None:
-        return RedirectResponse(url=request.url_for("login"), status_code=status.HTTP_303_SEE_OTHER)
+        return _redirect_to_login(request)
 
     api_response = await _api_request("GET", f"/moves/{move_id}", token)
+    if api_response.status_code in {401, 403}:
+        return _redirect_to_login(request)
     if api_response.status_code == 404:
-        context = {
-            "request": request,
-            "move": None,
-            "error": "Movimiento no encontrado",
-        }
-        return templates.TemplateResponse("move_detail.html", context, status_code=404)
+        return await _render_template(
+            "move_detail.html",
+            request,
+            {
+                "move": None,
+                "error": "Movimiento no encontrado",
+            },
+            status_code=404,
+        )
     if api_response.status_code != 200:
-        context = {
-            "request": request,
-            "move": None,
-            "error": "No se pudo cargar el movimiento",
-        }
-        return templates.TemplateResponse("move_detail.html", context, status_code=api_response.status_code)
+        return await _render_template(
+            "move_detail.html",
+            request,
+            {
+                "move": None,
+                "error": "No se pudo cargar el movimiento",
+            },
+            status_code=api_response.status_code,
+        )
 
     move = api_response.json()
-    context = {
-        "request": request,
-        "move": move,
-        "error": None,
-        "success_message": request.query_params.get("success"),
-    }
-    return templates.TemplateResponse("move_detail.html", context)
+    return await _render_template(
+        "move_detail.html",
+        request,
+        {
+            "move": move,
+            "error": None,
+            "success_message": request.query_params.get("success"),
+        },
+    )
 
 
 @app.post("/moves/{move_id}/confirm")
 async def move_confirm(request: Request, move_id: str):
     token = _require_token(request)
     if token is None:
-        return RedirectResponse(url=request.url_for("login"), status_code=status.HTTP_303_SEE_OTHER)
+        return _redirect_to_login(request)
 
     move_response = await _api_request("GET", f"/moves/{move_id}", token)
+    if move_response.status_code in {401, 403}:
+        return _redirect_to_login(request)
     if move_response.status_code != 200:
-        return templates.TemplateResponse(
+        return await _render_template(
             "move_detail.html",
+            request,
             {
-                "request": request,
                 "move": None,
                 "error": "Movimiento no encontrado",
             },
             status_code=move_response.status_code,
         )
-    move_payload = move_response.json() if move_response.status_code == 200 else None
+    move_payload = move_response.json()
 
     form = await request.form()
     item_codes = form.getlist("item_code")
@@ -308,12 +437,15 @@ async def move_confirm(request: Request, move_id: str):
             qty = None  # type: ignore[assignment]
             qty_confirmed = 0
         if qty is None or qty <= 0:
-            error_context = {
-                "request": request,
-                "move": move_payload,
-                "error": "Las cantidades deben ser enteros positivos.",
-            }
-            return templates.TemplateResponse("move_detail.html", error_context, status_code=400)
+            return await _render_template(
+                "move_detail.html",
+                request,
+                {
+                    "move": move_payload,
+                    "error": "Las cantidades deben ser enteros positivos.",
+                },
+                status_code=400,
+            )
         line_payload = {
             "item_code": code,
             "qty": qty,
@@ -324,21 +456,29 @@ async def move_confirm(request: Request, move_id: str):
         lines.append(line_payload)
 
     if not lines:
-        context = {
-            "request": request,
-            "move": move_payload,
-            "error": "Agrega al menos una línea antes de confirmar.",
-        }
-        return templates.TemplateResponse("move_detail.html", context, status_code=400)
+        return await _render_template(
+            "move_detail.html",
+            request,
+            {
+                "move": move_payload,
+                "error": "Agrega al menos una línea antes de confirmar.",
+            },
+            status_code=400,
+        )
 
     api_response = await _api_request("POST", f"/moves/{move_id}/confirm", token, json={"lines": lines})
+    if api_response.status_code in {401, 403}:
+        return _redirect_to_login(request)
     if api_response.status_code != 200:
-        context = {
-            "request": request,
-            "move": move_payload,
-            "error": _safe_detail(api_response, "No se pudo confirmar el movimiento"),
-        }
-        return templates.TemplateResponse("move_detail.html", context, status_code=api_response.status_code)
+        return await _render_template(
+            "move_detail.html",
+            request,
+            {
+                "move": move_payload,
+                "error": _safe_detail(api_response, "No se pudo confirmar el movimiento"),
+            },
+            status_code=api_response.status_code,
+        )
 
     return RedirectResponse(
         url=f"{request.url_for('move_detail', move_id=move_id)}?success=Movimiento%20confirmado",
@@ -350,24 +490,33 @@ async def move_confirm(request: Request, move_id: str):
 async def print_labels(request: Request):
     token = _require_token(request)
     if token is None:
-        return RedirectResponse(url=request.url_for("login"), status_code=status.HTTP_303_SEE_OTHER)
+        return _redirect_to_login(request)
 
     jobs_response = await _api_request("GET", "/print/jobs", token)
-    jobs = jobs_response.json() if jobs_response.status_code == 200 else []
-    context = {
-        "request": request,
-        "jobs": jobs,
-        "error": None,
-        "success": request.query_params.get("success"),
-    }
-    return templates.TemplateResponse("print_labels.html", context)
+    if jobs_response.status_code in {401, 403}:
+        return _redirect_to_login(request)
+    jobs = []
+    error = None
+    if jobs_response.status_code == 200:
+        jobs = jobs_response.json()
+    else:
+        error = _safe_detail(jobs_response, "No se pudo consultar la cola de impresión")
+    return await _render_template(
+        "print_labels.html",
+        request,
+        {
+            "jobs": jobs,
+            "error": error,
+            "success": request.query_params.get("success"),
+        },
+    )
 
 
 @app.post("/print")
 async def print_labels_submit(request: Request, codes: str = Form(...), copies: int = Form(1)):
     token = _require_token(request)
     if token is None:
-        return RedirectResponse(url=request.url_for("login"), status_code=status.HTTP_303_SEE_OTHER)
+        return _redirect_to_login(request)
 
     if copies < 1:
         copies = 1
@@ -376,34 +525,54 @@ async def print_labels_submit(request: Request, codes: str = Form(...), copies: 
 
     parsed_codes = [line.strip() for line in codes.splitlines() if line.strip()]
     if not parsed_codes:
-        jobs_response = await _api_request("GET", "/print/jobs", token)
-        context = {
-            "request": request,
-            "jobs": jobs_response.json() if jobs_response.status_code == 200 else [],
-            "error": "Ingresa al menos un código de producto.",
-        }
-        return templates.TemplateResponse("print_labels.html", context, status_code=400)
+        try:
+            jobs_response = await _api_request("GET", "/print/jobs", token)
+            jobs = jobs_response.json() if jobs_response.status_code == 200 else []
+        except httpx.RequestError:
+            jobs = []
+        return await _render_template(
+            "print_labels.html",
+            request,
+            {
+                "jobs": jobs,
+                "error": "Ingresa al menos un código de producto.",
+            },
+            status_code=400,
+        )
 
     failures: list[str] = []
     for code in parsed_codes:
-        response = await _api_request(
-            "POST",
-            "/print/product",
-            token,
-            json={"item_code": code, "copies": copies},
-        )
+        try:
+            response = await _api_request(
+                "POST",
+                "/print/product",
+                token,
+                json={"item_code": code, "copies": copies},
+            )
+        except httpx.RequestError:
+            failures.append(f"{code}: No se pudo contactar la API")
+            continue
+        if response.status_code in {401, 403}:
+            return _redirect_to_login(request)
         if response.status_code not in {200, 201}:
             detail = _safe_detail(response, "Error al encolar impresión")
             failures.append(f"{code}: {detail}")
 
     if failures:
-        jobs_response = await _api_request("GET", "/print/jobs", token)
-        context = {
-            "request": request,
-            "jobs": jobs_response.json() if jobs_response.status_code == 200 else [],
-            "error": "\n".join(failures),
-        }
-        return templates.TemplateResponse("print_labels.html", context, status_code=400)
+        try:
+            jobs_response = await _api_request("GET", "/print/jobs", token)
+            jobs = jobs_response.json() if jobs_response.status_code == 200 else []
+        except httpx.RequestError:
+            jobs = []
+        return await _render_template(
+            "print_labels.html",
+            request,
+            {
+                "jobs": jobs,
+                "error": "\n".join(failures),
+            },
+            status_code=400,
+        )
 
     return RedirectResponse(
         url=f"{request.url_for('print_labels')}?success=Etiquetas%20encoladas",

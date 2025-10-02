@@ -4,44 +4,69 @@ Este documento resume los componentes principales de la solución de picking bas
 
 ## Servicios
 
-- **picking-api**: Servicio FastAPI encargado de autenticación, operaciones de inventario (ingresos, salidas, traslados), auditoría y cola de impresión.
-- **ui**: Frontend en Python (FastAPI + Jinja + HTMX) que consume la API y entrega la experiencia de picking en español (es-CL).
-- **db**: Contenedor Postgres 15 con el esquema definido en `db/init.sql`.
-- **n8n**: Flujo existente que genera los archivos ABC–XYZ consumidos por la API y UI.
+- **picking-api**: Servicio FastAPI que maneja autenticación JWT, movimientos de inventario, importación ABC–XYZ y cola de impresión.
+- **ui**: Frontend FastAPI + Jinja2 que consume la API utilizando `PICKING_API_URL` y muestra el estado del backend en la cabecera.
+- **db**: Postgres 15 inicializado con `db/init.sql`, incluye usuario admin (contraseña `admin`).
+- **print-agent**: Cliente Windows que consume `/print/jobs` y envía ZPL a la Zebra ZD888t.
 
-## Flujo de datos ABC–XYZ
+## Puesta en marcha con Docker Compose
 
-1. n8n genera los archivos dentro de `project/output/`.
-2. El servicio `picking-api` monta `project/output/` como `/data/abcxyz` y ejecuta la importación usando `/import/abcxyz/from-local`.
-3. La UI expone un botón "Sincronizar ABC–XYZ" que dispara la importación.
-4. El agente de impresión en Windows consume la cola de impresión (`print_jobs`) mediante el endpoint `/print/jobs`.
+1. Copia el archivo de ejemplo y ajusta los valores necesarios:
 
-## Puesta en marcha rápida
+   ```bash
+   cp ops/.env.example ops/.env
+   ```
 
-```bash
-docker compose -f ops/docker-compose.yml up --build
-```
+2. Levanta la solución completa:
 
-1. Crear un archivo `.env` en la raíz copiando `samples/env/.env` (o basándose en él).
-2. Ejecutar el comando anterior para levantar los contenedores.
-3. Iniciar sesión con usuario `admin` (contraseña definida en base de datos) y realizar una importación inicial.
-4. Configurar el agente de impresión en Windows según `host/print-agent/README`.
+   ```bash
+   docker compose --env-file ops/.env -f ops/docker-compose.yml up --build
+   ```
 
-## Estructura de carpetas
+3. Accede a la UI en `http://localhost:8000` e inicia sesión con `admin`/`admin`.
 
-- `services/picking-api`: Código de la API, modelos y routers de FastAPI.
-- `services/ui`: Aplicación HTMX/Jinja que consume la API.
-- `host/print-agent`: Agente Windows que imprime etiquetas en la Zebra ZD888t.
-- `docs`: Documentación funcional y técnica.
-- `samples`: Recursos de ejemplo.
+El contenedor `picking-api` queda expuesto en `http://localhost:8001`. El badge en la UI consulta `/health` de la API para verificar conectividad.
 
-## Integración con SAP/Odoo
+## Ejecución local sin Docker
 
-La API expone endpoints de exportación (`/export/...`) que facilitan integraciones futuras con ERPs como SAP Business One u Odoo.
+1. Inicia Postgres (puedes reutilizar el contenedor):
 
-## Seguridad
+   ```bash
+   docker run --rm -e POSTGRES_USER=app -e POSTGRES_PASSWORD=app -e POSTGRES_DB=picking \
+     -p 5432:5432 -v $(pwd)/db/init.sql:/docker-entrypoint-initdb.d/init.sql postgres:15
+   ```
 
-- Autenticación JWT con expiración de 8 horas.
-- Intentos fallidos limitados (5 en 15 minutos).
-- Roles con control de acceso: operator, supervisor, admin.
-- Auditoría de eventos críticos en la tabla `audit`.
+2. Exporta variables mínimas:
+
+   ```bash
+   export DATABASE_URL=postgresql+asyncpg://app:app@localhost:5432/picking
+   export JWT_SECRET=change_me
+   ```
+
+3. Inicia la API:
+
+   ```bash
+   uvicorn services.picking-api.app.main:app --reload --port 8001
+   ```
+
+4. Inicia la UI apuntando al backend local:
+
+   ```bash
+   PICKING_API_URL=http://localhost:8001 uvicorn services.ui.app.main:app --reload --port 8000
+   ```
+
+## Importación ABC–XYZ
+
+- El directorio `samples/abcxyz/` se monta como `/data/abcxyz` en el servicio `picking-api` dentro de Docker.
+- Usa `POST /import/abcxyz/from-local` para leer el archivo Excel `abcxyz_results.xlsx`.
+- Alternativamente, envía datos JSON a `POST /import/abcxyz` para realizar _upsert_ de productos.
+
+## Colección Postman
+
+En `postman/` encontrarás `Picking.postman_collection.json` y `Picking.postman_environment.json`. La colección cubre los flujos de autenticación, movimientos, impresión y escaneo de documentos; incluye scripts para guardar el token JWT.
+
+## Seguridad y auditoría
+
+- Autenticación JWT con expiración configurable (`JWT_EXP_HOURS`).
+- Auditoría centralizada (`audit`) para login, creación y confirmación de movimientos.
+- Control de acceso basado en roles (`operator`, `supervisor`, `admin`).

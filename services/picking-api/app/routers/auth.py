@@ -1,12 +1,13 @@
 import datetime as dt
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import auth as auth_utils
 from .. import models, schemas
 from ..deps import get_session
+from ..errors import api_error
 
 router = APIRouter()
 
@@ -44,7 +45,7 @@ async def login(payload: schemas.LoginRequest, session: AsyncSession = Depends(g
             user_id=None,
             detail="Credenciales inválidas",
         )
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas")
+        raise api_error(status.HTTP_401_UNAUTHORIZED, "auth.invalid_credentials", "Credenciales inválidas")
     if not user.active:
         await _register_login_attempt(
             session,
@@ -53,7 +54,7 @@ async def login(payload: schemas.LoginRequest, session: AsyncSession = Depends(g
             user_id=str(user.id),
             detail="Usuario inactivo",
         )
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuario inactivo")
+        raise api_error(status.HTTP_403_FORBIDDEN, "auth.inactive_user", "Usuario inactivo")
     token = auth_utils.create_access_token({"sub": str(user.id), "role": user.role})
     await _register_login_attempt(
         session,
@@ -62,6 +63,23 @@ async def login(payload: schemas.LoginRequest, session: AsyncSession = Depends(g
         user_id=str(user.id),
     )
     return schemas.Token(access_token=token)
+
+
+@router.post("/refresh", response_model=schemas.Token)
+async def refresh(user: models.User = Depends(auth_utils.get_current_user)) -> schemas.Token:
+    token = auth_utils.create_access_token({"sub": str(user.id), "role": user.role})
+    return schemas.Token(access_token=token)
+
+
+@router.get("/me", response_model=schemas.UserProfile)
+async def me(user: models.User = Depends(auth_utils.get_current_user)) -> schemas.UserProfile:
+    return schemas.UserProfile(
+        id=user.id,
+        username=user.username,
+        role=user.role,
+        active=user.active,
+        created_at=user.created_at,
+    )
 
 
 @router.post("/logout", status_code=204)
