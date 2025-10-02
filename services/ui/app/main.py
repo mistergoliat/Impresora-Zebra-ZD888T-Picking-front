@@ -11,7 +11,6 @@ from fastapi.templating import Jinja2Templates
 BASE_DIR = Path(__file__).parent
 API_BASE_URL = os.getenv("PICKING_API_URL", "http://picking-api:8000")
 API_TIMEOUT = float(os.getenv("PICKING_API_TIMEOUT", "10"))
-LOGIN_ENDPOINT_OVERRIDE = os.getenv("PICKING_UI_LOGIN_ENDPOINT")
 
 app = FastAPI(title="Picking UI", version="0.1.0")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
@@ -111,8 +110,7 @@ async def login(request: Request):
             "request": request,
             "form_error": None,
             "username": request.cookies.get("username", ""),
-            "login_api_endpoint": LOGIN_ENDPOINT_OVERRIDE
-            or str(request.url_for("login_submit")),
+            "login_action": str(request.url_for("login_submit")),
         },
     )
 
@@ -146,6 +144,7 @@ async def login_submit(request: Request):
             "request": request,
             "form_error": message,
             "username": username,
+            "login_action": str(request.url_for("login_submit")),
         }
         return templates.TemplateResponse("login.html", context, status_code=status.HTTP_400_BAD_REQUEST)
 
@@ -164,6 +163,7 @@ async def login_submit(request: Request):
             "request": request,
             "form_error": message,
             "username": username,
+            "login_action": str(request.url_for("login_submit")),
         }
         return templates.TemplateResponse("login.html", context, status_code=status.HTTP_502_BAD_GATEWAY)
 
@@ -176,6 +176,7 @@ async def login_submit(request: Request):
             "request": request,
             "form_error": message,
             "username": username,
+            "login_action": str(request.url_for("login_submit")),
         }
         return templates.TemplateResponse("login.html", context, status_code=status.HTTP_401_UNAUTHORIZED)
 

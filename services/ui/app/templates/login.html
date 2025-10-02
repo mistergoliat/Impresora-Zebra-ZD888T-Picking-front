@@ -29,8 +29,7 @@
   <form
     class="login-card"
     method="post"
-    action="{{ url_for('login_submit') }}"
-    data-endpoint="{{ login_api_endpoint }}"
+    action="{{ login_action or url_for('login_submit') }}"
   >
     <h2>Iniciar sesión</h2>
     <p>Ingresa tus credenciales corporativas para continuar.</p>
@@ -89,8 +88,6 @@
 
       const submitButton = form.querySelector('button[type="submit"]');
       const errorBox = form.querySelector("[data-error-message]");
-      const endpoint = form.dataset.endpoint || form.action;
-
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
 
@@ -107,7 +104,7 @@
         };
 
         try {
-          const response = await fetch(endpoint, {
+          const response = await fetch(form.action, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
