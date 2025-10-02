@@ -3,7 +3,7 @@
 import datetime as dt
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from .. import models, schemas
 from ..auth import get_current_user
 from ..deps import get_session
+from ..errors import api_error
 from ..rbac import require_role
 
 router = APIRouter()
@@ -28,13 +29,13 @@ def _resolve_move_type(doc_type: str) -> tuple[str, int]:
     try:
         return MOVE_TYPE_MAPPING[doc_type]
     except KeyError as exc:  # pragma: no cover - defensive
-        raise HTTPException(status_code=400, detail="Tipo de documento inválido") from exc
+        raise api_error(status.HTTP_400_BAD_REQUEST, "moves.invalid_doc_type", "Tipo de documento inválido") from exc
 
 
 async def _ensure_product(session: AsyncSession, item_code: str) -> None:
     result = await session.execute(select(models.Product).where(models.Product.item_code == item_code))
     if result.scalar_one_or_none() is None:
-        raise HTTPException(status_code=404, detail=f"Producto {item_code} no existe")
+        raise api_error(status.HTTP_404_NOT_FOUND, "product.not_found", f"Producto {item_code} no existe")
 
 
 async def _get_move(session: AsyncSession, move_id: str) -> models.Move:
@@ -45,7 +46,7 @@ async def _get_move(session: AsyncSession, move_id: str) -> models.Move:
     )
     move = result.scalar_one_or_none()
     if move is None:
-        raise HTTPException(status_code=404, detail="Movimiento no encontrado")
+        raise api_error(status.HTTP_404_NOT_FOUND, "moves.not_found", "Movimiento no encontrado")
     return move
 
 
@@ -70,6 +71,23 @@ def _build_move_response(move: models.Move) -> schemas.MoveResponse:
             for line in move.lines
         ],
     )
+
+
+@router.get("/", response_model=list[schemas.MoveResponse])
+async def list_moves(
+    limit: int = Query(20, ge=1, le=100),
+    session: AsyncSession = Depends(get_session),
+    user=Depends(get_current_user),
+) -> list[schemas.MoveResponse]:
+    require_role(user, "operator")
+    result = await session.execute(
+        select(models.Move)
+        .options(selectinload(models.Move.lines))
+        .order_by(models.Move.created_at.desc())
+        .limit(limit)
+    )
+    moves = result.scalars().unique().all()
+    return [_build_move_response(move) for move in moves]
 
 
 @router.post("/", response_model=schemas.MoveResponse, status_code=status.HTTP_201_CREATED)
@@ -103,8 +121,8 @@ async def create_move(
         )
     )
     await session.commit()
-    await session.refresh(move)
-    return _build_move_response(move)
+    refreshed = await _get_move(session, str(move.id))
+    return _build_move_response(refreshed)
 
 
 @router.get("/{move_id}", response_model=schemas.MoveResponse)
@@ -128,13 +146,17 @@ async def confirm_move(
     require_role(user, "operator")
     move = await _get_move(session, move_id)
     if move.status == "approved":
-        raise HTTPException(status_code=400, detail="El movimiento ya fue aprobado")
+        raise api_error(status.HTTP_400_BAD_REQUEST, "moves.already_confirmed", "El movimiento ya fue aprobado")
 
     move_type, direction = _resolve_move_type(move.doc_type)
     if not payload.lines:
-        raise HTTPException(status_code=400, detail="Debes enviar al menos una línea")
+        raise api_error(status.HTTP_400_BAD_REQUEST, "moves.lines_required", "Debes enviar al menos una línea")
     if move.lines:
-        raise HTTPException(status_code=409, detail="Las líneas ya fueron registradas para este movimiento")
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            "moves.lines_already_recorded",
+            "Las líneas ya fueron registradas para este movimiento",
+        )
 
     confirmed_all = True
     audit_lines: list[dict[str, Any]] = []
@@ -142,7 +164,11 @@ async def confirm_move(
         await _ensure_product(session, line_payload.item_code)
         qty_confirmed = line_payload.qty_confirmed if line_payload.qty_confirmed is not None else line_payload.qty
         if qty_confirmed > line_payload.qty:
-            raise HTTPException(status_code=400, detail="La cantidad confirmada no puede superar la cantidad solicitada")
+            raise api_error(
+                status.HTTP_400_BAD_REQUEST,
+                "moves.invalid_qty",
+                "La cantidad confirmada no puede superar la cantidad solicitada",
+            )
         if qty_confirmed < line_payload.qty:
             confirmed_all = False
 
@@ -161,7 +187,11 @@ async def confirm_move(
             stock.qty += qty_confirmed
         else:
             if stock is None or stock.qty < qty_confirmed:
-                raise HTTPException(status_code=400, detail=f"Stock insuficiente para {line_payload.item_code}")
+                raise api_error(
+                    status.HTTP_400_BAD_REQUEST,
+                    "stock.insufficient",
+                    f"Stock insuficiente para {line_payload.item_code}",
+                )
             stock.qty -= qty_confirmed
 
         session.add(

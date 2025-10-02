@@ -5,11 +5,14 @@
 ## Autenticación
 
 - `POST /auth/login` → `{ "access_token": str, "token_type": "bearer" }`
+- `POST /auth/refresh` → renueva el JWT usando el token actual.
+- `GET /auth/me` → datos del usuario autenticado.
 - `POST /auth/logout`
 
 ## Importación ABC–XYZ
 
 - `GET /import/abcxyz/probe` → `{ "available": bool, "path": str }`
+- `POST /import/abcxyz` → `{ "items": [ { ...producto... } ] }` → `{ "imported": int }`
 - `POST /import/abcxyz/from-local` → `{ "imported": int }`
 
 ## Documentos
@@ -26,7 +29,9 @@
 
 ## Impresión
 
+- `GET /print/probe` → `{ "status": "ok", "printer_name": str }`
 - `POST /print/product` → encola ZPL.
+- `POST /print/from-local` → encola ZPL arbitrario recibido en el cuerpo.
 - `GET /print/jobs` → parámetros `status`, `limit`.
 - `POST /print/jobs/{id}/ack` → marca como enviado/erro.
 
