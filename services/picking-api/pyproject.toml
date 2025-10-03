@@ -12,6 +12,8 @@ dependencies = [
   "python-dotenv",
   "pydantic[email]",
   "passlib[bcrypt]",
+  "bcrypt<4",
+  "jinja2",
   "python-jose[cryptography]",
   "openpyxl",
   "pandas",

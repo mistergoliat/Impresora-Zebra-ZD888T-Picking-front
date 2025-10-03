@@ -57,7 +57,7 @@ class PrintAckRequest(BaseModel):
 
 
 class MoveCreateRequest(BaseModel):
-    doc_type: str = Field(regex="^(PO|SO|TR|RT)$")
+    doc_type: str = Field(pattern="^(PO|SO|TR|RT)$")
     doc_number: str = Field(min_length=1, max_length=64)
 
 

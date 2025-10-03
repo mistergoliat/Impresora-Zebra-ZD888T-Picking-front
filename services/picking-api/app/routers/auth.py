@@ -1,4 +1,5 @@
 import datetime as dt
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -16,7 +17,7 @@ async def _register_login_attempt(
     *,
     username: str,
     success: bool,
-    user_id: str | None,
+    user_id: uuid.UUID | None,
     detail: str | None = None,
 ) -> None:
     session.add(
@@ -50,7 +51,7 @@ async def login(payload: schemas.LoginRequest, session: AsyncSession = Depends(g
             session,
             username=payload.username,
             success=False,
-            user_id=str(user.id),
+            user_id=user.id,
             detail="Usuario inactivo",
         )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuario inactivo")
@@ -59,7 +60,7 @@ async def login(payload: schemas.LoginRequest, session: AsyncSession = Depends(g
         session,
         username=payload.username,
         success=True,
-        user_id=str(user.id),
+        user_id=user.id,
     )
     return schemas.Token(access_token=token)
 

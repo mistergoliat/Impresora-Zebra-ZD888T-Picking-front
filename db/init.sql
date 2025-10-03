@@ -1,7 +1,7 @@
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS users(
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   username TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('operator','supervisor','admin')),
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS products(
 );
 
 CREATE TABLE IF NOT EXISTS stock(
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   item_code TEXT NOT NULL REFERENCES products(item_code),
   lot TEXT NULL,
   serial TEXT NULL,
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS stock(
 );
 
 CREATE TABLE IF NOT EXISTS moves(
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   type TEXT NOT NULL CHECK (type IN ('inbound','outbound','transfer','return')),
   doc_type TEXT NOT NULL CHECK (doc_type IN ('PO','SO','TR','RT')),
   doc_number TEXT NOT NULL,
@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS moves(
 );
 
 CREATE TABLE IF NOT EXISTS move_lines(
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   move_id UUID NOT NULL REFERENCES moves(id) ON DELETE CASCADE,
   item_code TEXT NOT NULL REFERENCES products(item_code),
   lot TEXT NULL,
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS move_lines(
 );
 
 CREATE TABLE IF NOT EXISTS audit(
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   entity TEXT NOT NULL,
   entity_id TEXT NOT NULL,
   action TEXT NOT NULL,
@@ -71,8 +71,48 @@ CREATE TABLE IF NOT EXISTS audit(
   ts TIMESTAMP NOT NULL DEFAULT now()
 );
 
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'audit'
+      AND column_name = 'payload_json'
+      AND udt_name = 'text'
+  ) THEN
+    ALTER TABLE audit
+      ALTER COLUMN payload_json TYPE JSONB
+      USING payload_json::jsonb;
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users') THEN
+    ALTER TABLE users ALTER COLUMN id SET DEFAULT gen_random_uuid();
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'stock') THEN
+    ALTER TABLE stock ALTER COLUMN id SET DEFAULT gen_random_uuid();
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'moves') THEN
+    ALTER TABLE moves ALTER COLUMN id SET DEFAULT gen_random_uuid();
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'move_lines') THEN
+    ALTER TABLE move_lines ALTER COLUMN id SET DEFAULT gen_random_uuid();
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'audit') THEN
+    ALTER TABLE audit ALTER COLUMN id SET DEFAULT gen_random_uuid();
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'print_jobs') THEN
+    ALTER TABLE print_jobs ALTER COLUMN id SET DEFAULT gen_random_uuid();
+  END IF;
+END
+$$;
+
 CREATE TABLE IF NOT EXISTS print_jobs(
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   printer_name TEXT NOT NULL,
   payload_zpl TEXT NOT NULL,
   copies INT NOT NULL DEFAULT 1,
